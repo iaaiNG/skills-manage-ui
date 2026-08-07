@@ -3,6 +3,7 @@ import React, { useState } from "react";
 interface AgentIconProps {
   agentKey: string;
   className?: string;
+  name?: string;
 }
 
 // Complete Icon file mapping for all 76 Agents
@@ -87,7 +88,7 @@ const ICON_MAP: Record<string, string> = {
   "adal": "/agent-icons/adal.png",
 };
 
-export function AgentIcon({ agentKey, className = "w-7 h-7" }: AgentIconProps) {
+export function AgentIcon({ agentKey, className = "w-7 h-7", name }: AgentIconProps) {
   const [error, setError] = useState(false);
   const iconPath = ICON_MAP[agentKey];
 
@@ -102,10 +103,16 @@ export function AgentIcon({ agentKey, className = "w-7 h-7" }: AgentIconProps) {
     );
   }
 
-  // 通用兜底图标 (Sparkle / Robot Vector)
+  // 首字母大写 Avatar 徽章
+  const displayName = name || agentKey || "A";
+  const firstLetter = displayName.trim().charAt(0).toUpperCase() || "A";
+
   return (
-    <svg className={`${className} text-purple-600 shrink-0`} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z" />
-    </svg>
+    <div
+      className={`${className} rounded-xl bg-gradient-to-br from-purple-600 via-indigo-600 to-purple-800 text-white font-mono font-black flex items-center justify-center shadow-xs border border-purple-300/40 shrink-0 select-none text-[0.7em]`}
+      title={displayName}
+    >
+      {firstLetter}
+    </div>
   );
 }

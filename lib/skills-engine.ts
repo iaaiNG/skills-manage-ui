@@ -4,6 +4,25 @@ import os from "node:os";
 
 export const runtime = "nodejs";
 
+/**
+ * Resolve an agent globalPath entry to an absolute filesystem path.
+ * Handles:
+ *   - Already-absolute paths: /Users/iaaing/.qclaw/skills  -> unchanged
+ *   - ~/... paths: ~/.qclaw/skills -> /Users/iaaing/.qclaw/skills
+ *   - Relative-to-home paths: .qclaw/skills -> /Users/iaaing/.qclaw/skills
+ *   - Incorrectly stripped paths: Users/iaaing/.qclaw/skills -> /Users/iaaing/.qclaw/skills
+ */
+export function resolveAgentGlobalPath(rawPath: string): string {
+  const home = os.homedir();
+  const p = rawPath.trim();
+  if (!p) return home;
+  if (path.isAbsolute(p)) return p;
+  if (p.startsWith("~/") || p === "~") return path.join(home, p.slice(p.startsWith("~/") ? 2 : 1));
+  // Handle accidentally-stripped leading slash (e.g. "Users/iaaing/.qclaw/skills")
+  if (p.startsWith("Users/") || p.startsWith("home/")) return "/" + p;
+  return path.join(home, p);
+}
+
 const DEFAULT_LIBRARY = path.join(os.homedir(), ".skills-library");
 const CONFIG_PATH = path.join(DEFAULT_LIBRARY, "config.json");
 const OLD_CONFIG_PATH = path.join(os.homedir(), ".skills-manage-ui", "config.json");
@@ -25,6 +44,7 @@ export interface AgentDef {
   projectPath: string;
   icon: string;
   description: string;
+  isCustom?: boolean;
 }
 
 export const SUPPORTED_AGENTS: AgentDef[] = [
@@ -129,7 +149,7 @@ export function getConfig(): { sourceDirs: string[]; enabledAgentKeys?: string[]
   return { sourceDirs: [DEFAULT_LIBRARY] };
 }
 
-export function saveConfig(config: { sourceDirs?: string[]; enabledAgentKeys?: string[] }) {
+export function saveConfig(config: { sourceDirs?: string[]; enabledAgentKeys?: string[]; customAgents?: AgentDef[] }) {
   const current = getConfig();
   const next = { ...current, ...config };
   const dirPath = path.dirname(CONFIG_PATH);
@@ -140,6 +160,52 @@ export function saveConfig(config: { sourceDirs?: string[]; enabledAgentKeys?: s
   if (config.sourceDirs) {
     cleanupOrphanedSymlinks();
   }
+}
+
+export function getCustomAgents(): AgentDef[] {
+  const conf = getConfig();
+  if (Array.isArray((conf as any).customAgents)) {
+    return ((conf as any).customAgents as AgentDef[]).map((a) => ({ ...a, isCustom: true }));
+  }
+  return [];
+}
+
+export function getAllAgentDefs(): AgentDef[] {
+  const custom = getCustomAgents();
+  return [...SUPPORTED_AGENTS, ...custom];
+}
+
+export function saveCustomAgent(agent: AgentDef): AgentDef[] {
+  const currentCustom = getCustomAgents();
+  const index = currentCustom.findIndex((a) => a.key === agent.key);
+  const newAgent = { ...agent, isCustom: true };
+  let updated: AgentDef[];
+  if (index >= 0) {
+    updated = [...currentCustom];
+    updated[index] = newAgent;
+  } else {
+    updated = [...currentCustom, newAgent];
+  }
+  saveConfig({ customAgents: updated });
+
+  const enabledKeys = getEnabledAgentKeys();
+  if (!enabledKeys.includes(agent.key)) {
+    toggleAgentEnabled(agent.key, true);
+  }
+  return updated;
+}
+
+export function deleteCustomAgent(agentKey: string): AgentDef[] {
+  const currentCustom = getCustomAgents();
+  const updated = currentCustom.filter((a) => a.key !== agentKey);
+  saveConfig({ customAgents: updated });
+
+  const currentEnabled = getEnabledAgentKeys();
+  if (currentEnabled.includes(agentKey)) {
+    toggleAgentEnabled(agentKey, false);
+  }
+  cleanupOrphanedSymlinks();
+  return updated;
 }
 
 export function getSourceDirs(): string[] {
@@ -174,9 +240,9 @@ export function getEnabledAgentKeys(): string[] {
   }
   const home = os.homedir();
   const defaultEnabled: string[] = [];
-  for (const agent of SUPPORTED_AGENTS) {
+  for (const agent of getAllAgentDefs()) {
     for (const relPath of agent.globalPaths) {
-      if (fs.existsSync(path.join(home, relPath))) {
+      if (fs.existsSync(resolveAgentGlobalPath(relPath))) {
         defaultEnabled.push(agent.key);
         break;
       }
@@ -319,9 +385,9 @@ export function getAllSkills(includeAgentNativeDirs: boolean = false): SkillItem
   const allDirsToScan = new Set<string>(configuredSourceDirs);
 
   if (includeAgentNativeDirs) {
-    for (const agent of SUPPORTED_AGENTS) {
+    for (const agent of getAllAgentDefs()) {
       for (const relPath of agent.globalPaths) {
-        const fullAgentPath = path.join(home, relPath);
+        const fullAgentPath = resolveAgentGlobalPath(relPath);
         if (fs.existsSync(fullAgentPath)) {
           allDirsToScan.add(fullAgentPath);
         }
@@ -355,10 +421,10 @@ export function getAllSkills(includeAgentNativeDirs: boolean = false): SkillItem
       const nativeAgents: string[] = [];
       const linkedAgents: string[] = [];
 
-      for (const agent of SUPPORTED_AGENTS) {
+      for (const agent of getAllAgentDefs()) {
         if (!enabledAgentKeys.includes(agent.key)) continue;
         for (const relPath of agent.globalPaths) {
-          const agentSkillPath = path.join(home, relPath, skillName);
+          const agentSkillPath = path.join(resolveAgentGlobalPath(relPath), skillName);
           const agentStat = safeLstat(agentSkillPath);
           if (agentStat) {
             linkedAgents.push(agent.key);
@@ -404,13 +470,13 @@ export function getAllSkills(includeAgentNativeDirs: boolean = false): SkillItem
 
 export function toggleSkillSymlink(skillName: string, agentKey: string, enable: boolean): boolean {
   const home = os.homedir();
-  const agent = SUPPORTED_AGENTS.find((a) => a.key === agentKey);
+  const agent = getAllAgentDefs().find((a) => a.key === agentKey);
   if (!agent || agent.globalPaths.length === 0) return false;
 
   const skills = getAllSkills(false);
   const skill = skills.find((s) => s.name === skillName);
 
-  const targetAgentDir = path.join(home, agent.globalPaths[0]);
+  const targetAgentDir = resolveAgentGlobalPath(agent.globalPaths[0]);
   const symlinkPath = path.join(targetAgentDir, skillName);
 
   try {
@@ -441,9 +507,9 @@ export function cleanupOrphanedSymlinks() {
   const home = os.homedir();
   const validSourceDirs = getSourceDirs();
 
-  for (const agent of SUPPORTED_AGENTS) {
+  for (const agent of getAllAgentDefs()) {
     for (const relPath of agent.globalPaths) {
-      const agentDir = path.join(home, relPath);
+      const agentDir = resolveAgentGlobalPath(relPath);
       if (!fs.existsSync(agentDir)) continue;
 
       try {

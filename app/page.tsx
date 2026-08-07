@@ -24,6 +24,7 @@ interface AgentInfo {
   enabled: boolean;
   detectedPath: string;
   skillCount: number;
+  isCustom?: boolean;
 }
 
 type Page = "installed" | "agents" | "config";
@@ -104,8 +105,95 @@ export default function Home() {
     mode: "mount",
   });
 
+  // Custom Agent Creation Modal State
+  const [customAgentModal, setCustomAgentModal] = useState<{
+    isOpen: boolean;
+    name: string;
+    key: string;
+    globalPath: string;
+    description: string;
+  }>({
+    isOpen: false,
+    name: "",
+    key: "",
+    globalPath: "",
+    description: "",
+  });
+
   // Dynamically derive activeSkillModal from skills array so state is always 100% fresh
   const activeSkillModal = skills.find((s) => s.name === activeSkillModalName) || null;
+
+  const handleAddCustomAgent = async () => {
+    if (!customAgentModal.name.trim()) return;
+    const agentKey =
+      customAgentModal.key.trim() ||
+      customAgentModal.name
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "-")
+        .replace(/-+/g, "-");
+    const relPath = customAgentModal.globalPath.trim().replace(/^~\//, "");
+
+    try {
+      const res = await fetch("/api/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "addCustom",
+          customAgent: {
+            name: customAgentModal.name.trim(),
+            key: agentKey,
+            globalPaths: relPath ? [relPath] : [`.${agentKey}/skills`],
+            projectPath: relPath ? `${relPath}/` : `.${agentKey}/skills/`,
+            icon: agentKey,
+            description: customAgentModal.description.trim() || "自定义 Agent 引擎",
+            isCustom: true,
+          },
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setCustomAgentModal((prev) => ({
+          ...prev,
+          isOpen: false,
+          name: "",
+          key: "",
+          globalPath: "",
+          description: "",
+        }));
+        await Promise.all([fetchAgents(), fetchSkills()]);
+      }
+    } catch (e) {
+      console.error("Add custom agent error:", e);
+    }
+  };
+
+  const handleDeleteCustomAgent = async (agentKey: string, agentName: string) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "确认删除自定义 Agent 引擎？",
+      message: `是否确定删除自定义 Agent【${agentName}】？相关已生成的 Symlink 软链接将被安全自动解绑。`,
+      confirmText: "确认删除",
+      cancelText: "取消",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/agents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "deleteCustom",
+              agentKey,
+            }),
+          });
+          const data = await res.json();
+          if (data.success) {
+            await Promise.all([fetchAgents(), fetchSkills()]);
+          }
+        } catch (e) {
+          console.error("Delete custom agent error:", e);
+        }
+      },
+    });
+  };
 
   const openBatchMountModal = (
     sourcePath: string,
@@ -1006,6 +1094,21 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center gap-3">
+                  <button
+                    onClick={() =>
+                      setCustomAgentModal({
+                        isOpen: true,
+                        name: "",
+                        key: "",
+                        globalPath: "",
+                        description: "",
+                      })
+                    }
+                    className="px-3.5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-mono font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
+                  >
+                    <span>+ 添加自定义 Agent</span>
+                  </button>
+
                   <div className="flex items-center bg-slate-200/80 p-1 rounded-xl border border-slate-300 font-mono text-xs">
                     <button
                       onClick={() => setAgentFilter("enabled")}
@@ -1068,11 +1171,16 @@ export default function Home() {
                     >
                       <div className="space-y-3">
                         <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-3">
-                            <AgentIcon agentKey={agent.key} className="w-8 h-8 shrink-0 object-contain" />
-                            <div>
-                              <h3 className="font-mono font-bold text-base text-slate-950 flex items-center gap-2">
-                                <span>{agent.name}</span>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <AgentIcon agentKey={agent.key} name={agent.name} className="w-8 h-8 shrink-0" />
+                            <div className="min-w-0">
+                              <h3 className="font-mono font-bold text-base text-slate-950 flex items-center gap-2 truncate">
+                                <span className="truncate">{agent.name}</span>
+                                {agent.isCustom && (
+                                  <span className="text-[10px] font-mono font-bold text-purple-800 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200 shrink-0">
+                                    自定义
+                                  </span>
+                                )}
                               </h3>
                               <span className="text-[10px] font-mono text-slate-500">
                                 ID: {agent.key}
@@ -1080,23 +1188,35 @@ export default function Home() {
                             </div>
                           </div>
 
-                          {/* 手动激活开关 */}
-                          <button
-                            disabled={isActivating}
-                            onClick={() => toggleAgentActivation(agent.key, !agent.enabled)}
-                            className={`px-3 py-1 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 ${
-                              agent.enabled
-                                ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 shadow-sm"
-                                : "bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300"
-                            }`}
-                          >
-                            <span
-                              className={`w-2 h-2 rounded-full ${
-                                agent.enabled ? "bg-emerald-500 glow-emerald" : "bg-slate-400"
+                          <div className="flex items-center gap-2 shrink-0">
+                            {agent.isCustom && (
+                              <button
+                                onClick={() => handleDeleteCustomAgent(agent.key, agent.name)}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-600 text-rose-700 hover:text-white text-xs font-mono font-bold rounded-xl border border-rose-200 transition"
+                                title="删除自定义 Agent"
+                              >
+                                删除
+                              </button>
+                            )}
+
+                            {/* 手动激活开关 */}
+                            <button
+                              disabled={isActivating}
+                              onClick={() => toggleAgentActivation(agent.key, !agent.enabled)}
+                              className={`px-3 py-1 rounded-full text-xs font-mono font-bold transition flex items-center gap-1.5 ${
+                                agent.enabled
+                                  ? "bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 shadow-sm"
+                                  : "bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300"
                               }`}
-                            />
-                            <span>{agent.enabled ? "✓ 已激活" : "+ 手动激活"}</span>
-                          </button>
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  agent.enabled ? "bg-emerald-500 glow-emerald" : "bg-slate-400"
+                                }`}
+                              />
+                              <span>{agent.enabled ? "✓ 已激活" : "+ 手动激活"}</span>
+                            </button>
+                          </div>
                         </div>
 
                         <p className="text-xs text-slate-600 font-sans leading-relaxed">
@@ -1863,6 +1983,113 @@ export default function Home() {
                   {batchMountModal.mode === "mount"
                     ? `确认批量挂载到 ${batchMountModal.selectedAgentKeys.length} 款 Agent`
                     : `确认批量从 ${batchMountModal.selectedAgentKeys.length} 款 Agent 移除`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customAgentModal.isOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-2xl rounded-3xl border border-purple-200 shadow-2xl w-full max-w-lg overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="font-mono font-bold text-base text-slate-950 flex items-center gap-2">
+                  <span>添加自定义 Agent 引擎</span>
+                </h3>
+                <p className="text-xs text-slate-500 font-mono mt-1">
+                  手动添加非内置支持的自定义智能体 CLI 或 IDE 专属 Skill 目录
+                </p>
+              </div>
+              <button
+                onClick={() => setCustomAgentModal((prev) => ({ ...prev, isOpen: false }))}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold flex items-center justify-center transition shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 font-mono text-xs">
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800">Agent 名称 *</label>
+                <input
+                  type="text"
+                  placeholder="例如: Custom AI Agent"
+                  value={customAgentModal.name}
+                  onChange={(e) =>
+                    setCustomAgentModal((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                      key: prev.key || e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "-"),
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-purple-600 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800">Agent 标识 Key *</label>
+                <input
+                  type="text"
+                  placeholder="例如: custom-agent"
+                  value={customAgentModal.key}
+                  onChange={(e) => setCustomAgentModal((prev) => ({ ...prev, key: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-purple-600 bg-white"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800">Global Skill 软链接相对路径 (相对于用户主目录 ~)</label>
+                <input
+                  type="text"
+                  placeholder="例如: .custom-agent/skills"
+                  value={customAgentModal.globalPath}
+                  onChange={(e) => setCustomAgentModal((prev) => ({ ...prev, globalPath: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-purple-600 bg-white"
+                />
+                <p className="text-[10px] text-slate-400">
+                  如留空，默认将使用 `.~/{customAgentModal.key || "agent-key"}/skills`
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="font-bold text-slate-800">描述说明 (可选)</label>
+                <input
+                  type="text"
+                  placeholder="例如: 自定义 AI Agent 引擎"
+                  value={customAgentModal.description}
+                  onChange={(e) => setCustomAgentModal((prev) => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:border-purple-600 bg-white"
+                />
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between font-mono text-xs">
+              <div className="flex items-center gap-2">
+                <AgentIcon
+                  agentKey={customAgentModal.key || "custom"}
+                  name={customAgentModal.name || "Custom"}
+                  className="w-7 h-7 shrink-0"
+                />
+                <span className="text-slate-500 font-bold">
+                  Logo 预检: 首字母【{(customAgentModal.name || customAgentModal.key || "C").trim().charAt(0).toUpperCase()}】
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setCustomAgentModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl transition"
+                >
+                  取消
+                </button>
+                <button
+                  disabled={!customAgentModal.name.trim()}
+                  onClick={handleAddCustomAgent}
+                  className="px-5 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl shadow-md transition"
+                >
+                  确认添加 Agent
                 </button>
               </div>
             </div>
