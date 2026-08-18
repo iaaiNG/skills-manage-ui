@@ -23,6 +23,21 @@
 
 ---
 
+## 💡 核心管理哲学：为什么不建议使用公共的 `~/.agents/skills`？ (Best Practices)
+
+> [!IMPORTANT]
+> **在接入 Skills Manager 后，强烈建议停止使用公共共享文件夹 `~/.agents/skills` 向所有智能体共享 Skill，改为“集中仓储存储 + 显式点对点软链接挂载”！**
+
+### ❌ 传统公共共享模式的问题 (`~/.agents/skills`)
+1. **隐式污染与工具冲突**：将所有 Skill 统一放入公共 `~/.agents/skills` 目录后，本机运行的所有 Agent 都会无差别强制加载全部技能包。不同 Agent 的系统 Prompt、工具调配规则极易相互碰撞干扰，导致大模型产生幻觉或调错工具。
+2. **状态黑盒与难以维护**：无法直观区分哪个 Agent 真正需要哪个 Skill。在修改或删除某个公共 Skill 时，极易产生“误伤其他 Agent 工作流”的隐性风险。
+
+### ✅ Skills Manager 的解法：独立仓储 + 显式按需挂载
+1. **源码单一信任源 (Single Source of Truth)**：所有 Skill 源码集中保存在专门的仓库中（如 `~/.skills-library` 或您的自定义代码库）。
+2. **点对点精准分发**：使用 Skills Manager 为每一个 Agent（如 `Antigravity CLI`、`SkillHub`、`CodeBuddy` 等）创建独有的软链接（Symlink）映射。每个 Agent 仅加载自身必需的技能，职责清晰、隔离安全、架构不混乱！
+
+---
+
 ## 🖼 界面预览 (Screenshots)
 
 <p align="center">
