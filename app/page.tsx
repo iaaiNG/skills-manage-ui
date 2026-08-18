@@ -1267,8 +1267,8 @@ export default function Home() {
         <div className="p-3 bg-white/60 rounded-xl border border-slate-200/60 text-[10px] font-mono text-slate-500 space-y-1.5 shadow-2xs">
           <div className="flex justify-between items-center">
             <span>引擎架构:</span>
-            <span className="text-slate-800 font-semibold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200/50">
-              Node FS Native
+            <span className="text-purple-700 font-bold px-1.5 py-0.5 rounded bg-purple-50 border border-purple-100 font-mono">
+              Tauri 2.0 Rust Native
             </span>
           </div>
           <div className="flex justify-between items-center">
