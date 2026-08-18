@@ -7,10 +7,10 @@ export const runtime = "nodejs";
 /**
  * Resolve an agent globalPath entry to an absolute filesystem path.
  * Handles:
- *   - Already-absolute paths: /Users/iaaing/.qclaw/skills  -> unchanged
- *   - ~/... paths: ~/.qclaw/skills -> /Users/iaaing/.qclaw/skills
- *   - Relative-to-home paths: .qclaw/skills -> /Users/iaaing/.qclaw/skills
- *   - Incorrectly stripped paths: Users/iaaing/.qclaw/skills -> /Users/iaaing/.qclaw/skills
+ *   - Already-absolute paths: /Users/username/.qclaw/skills  -> unchanged
+ *   - ~/... paths: ~/.qclaw/skills -> /Users/username/.qclaw/skills
+ *   - Relative-to-home paths: .qclaw/skills -> /Users/username/.qclaw/skills
+ *   - Incorrectly stripped paths: Users/username/.qclaw/skills -> /Users/username/.qclaw/skills
  */
 export function resolveAgentGlobalPath(rawPath: string): string {
   const home = os.homedir();
@@ -18,7 +18,7 @@ export function resolveAgentGlobalPath(rawPath: string): string {
   if (!p) return home;
   if (path.isAbsolute(p)) return p;
   if (p.startsWith("~/") || p === "~") return path.join(home, p.slice(p.startsWith("~/") ? 2 : 1));
-  // Handle accidentally-stripped leading slash (e.g. "Users/iaaing/.qclaw/skills")
+  // Handle accidentally-stripped leading slash (e.g. "Users/username/.qclaw/skills")
   if (p.startsWith("Users/") || p.startsWith("home/")) return "/" + p;
   return path.join(home, p);
 }
