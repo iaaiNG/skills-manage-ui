@@ -23,6 +23,18 @@
 
 ---
 
+## 🖼 界面预览 (Screenshots)
+
+<p align="center">
+  <img src="docs/preview-1.png" alt="技能库仓储与软链接管理" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/preview-2.png" alt="支持的 Agent 引擎面板" width="100%" />
+</p>
+
+---
+
 ## ✨ 核心特性 (Features)
 
 - ⚡️ **Tauri 2.0 + Rust 原生底层引擎**：纯 Rust 原生处理路径检测、读写与符号软链接（Symlink）原子挂载，安全高效。
