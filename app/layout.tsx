@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Skills 控制中心 // 水晶玻璃拟态终端",
+  title: "Skills 控制中心",
   description: "基于 Next.js 与 Antigravity CLI 的可视化技能管理控制台",
 };
 
@@ -32,7 +32,7 @@ export default function RootLayout({
         <div className="ambient-blob-1" aria-hidden="true" />
         <div className="ambient-blob-2" aria-hidden="true" />
         <div className="ambient-blob-3" aria-hidden="true" />
-        
+
         <div className="relative z-10 min-h-full flex flex-col">
           {children}
         </div>
